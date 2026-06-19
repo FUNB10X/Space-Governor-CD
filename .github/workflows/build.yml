@@ -1,0 +1,131 @@
+name: Build & Release Game
+
+on:
+  push:
+    tags:
+      - 'v*'          # รัน workflow เมื่อ push tag เช่น v1.0, v1.2
+  workflow_dispatch:  # สามารถรันมือได้จาก GitHub UI
+
+jobs:
+  # ─────────────────────────────────────────
+  # Windows EXE
+  # ─────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pygame numpy pyinstaller
+
+      - name: Build EXE with PyInstaller
+        run: |
+          pyinstaller --onefile --windowed --name "SpaceGovernorCD" `
+            --add-data "Asset;Asset" `
+            main.py
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpaceGovernorCD-Windows
+          path: dist/SpaceGovernorCD.exe
+
+  # ─────────────────────────────────────────
+  # macOS App
+  # ─────────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pygame numpy pyinstaller
+
+      - name: Build macOS app
+        run: |
+          pyinstaller --onefile --windowed --name "SpaceGovernorCD" \
+            --add-data "Asset:Asset" \
+            main.py
+
+      - name: Zip the app
+        run: |
+          cd dist
+          zip -r SpaceGovernorCD-macOS.zip SpaceGovernorCD
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpaceGovernorCD-macOS
+          path: dist/SpaceGovernorCD-macOS.zip
+
+  # ─────────────────────────────────────────
+  # Linux Binary
+  # ─────────────────────────────────────────
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system deps (SDL for pygame)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
+
+      - name: Install Python dependencies
+        run: |
+          pip install pygame numpy pyinstaller
+
+      - name: Build Linux binary
+        run: |
+          pyinstaller --onefile --name "SpaceGovernorCD" \
+            --add-data "Asset:Asset" \
+            main.py
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpaceGovernorCD-Linux
+          path: dist/SpaceGovernorCD
+
+  # ─────────────────────────────────────────
+  # GitHub Release (รวม artifact ทั้ง 3)
+  # ─────────────────────────────────────────
+  release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            SpaceGovernorCD-Windows/SpaceGovernorCD.exe
+            SpaceGovernorCD-macOS/SpaceGovernorCD-macOS.zip
+            SpaceGovernorCD-Linux/SpaceGovernorCD
+          generate_release_notes: true
