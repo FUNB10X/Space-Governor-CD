@@ -180,7 +180,7 @@ class Structure:
 # 3. DEFENSE TURRETS
 # ==========================================
 class Turret:
-    def __init__(self, ttype, x, y, turret_cost_mult=1.0, normal_rate_mult=1.0, heavy_dmg_mult=1.0):
+    def __init__(self, ttype, x, y, turret_cost_mult=1.0, normal_rate_mult=1.0, heavy_dmg_mult=1.0, range_mult=1.0, global_rate_mult=1.0):
         self.ttype = ttype
         self.x = float(x)
         self.y = float(y)
@@ -195,15 +195,15 @@ class Turret:
         if ttype == 'normal':
             self.name = "Normal Turret"
             self.cost = int(120 * turret_cost_mult)
-            self.rng = 220
+            self.rng = int(220 * range_mult)
             self.dmg = 12
-            self.fire_rate = 0.8 * normal_rate_mult  # Seconds per shot
+            self.fire_rate = 0.8 * normal_rate_mult * global_rate_mult  # Seconds per shot
         elif ttype == 'heavy':
             self.name = "High Damage Turret"
             self.cost = int(250 * turret_cost_mult)
-            self.rng = 320
+            self.rng = int(320 * range_mult)
             self.dmg = int(40 * heavy_dmg_mult)
-            self.fire_rate = 2.2  # Seconds per shot
+            self.fire_rate = 2.2 * global_rate_mult  # Seconds per shot
 
     def update(self, dt, enemies, projectiles):
         if self.cooldown_timer > 0:
@@ -377,7 +377,7 @@ class Enemy:
             self.rew_iron = 10
             self.rew_coal = 6
 
-    def update(self, dt, dome, structures, turrets, particles, floating_texts):
+    def update(self, dt, dome, structures, turrets, particles, floating_texts, dome_dmg_mult=1.0):
         if self.hp <= 0:
             # Generate rewards
             play_sfx('explosion')
@@ -390,7 +390,7 @@ class Enemy:
             return False  # Dead
 
         # --- Movement: walk right toward the rectangular Dome gate ---
-        target_x = float(CITY_ZONE_X)
+        target_x = float(CITY_ZONE_X + 20)
         target_y = float(DOME_Y)
 
         dx = target_x - self.x
@@ -404,11 +404,12 @@ class Enemy:
         )
         if inside_dome_rect:
             self.reached_dome = True
-            dome.hp = max(0, dome.hp - 100)
+            dmg_dealt = int(100 * dome_dmg_mult)
+            dome.hp = max(0, dome.hp - dmg_dealt)
             play_sfx('dome_hit')
             for _ in range(8):
                 particles.append(Particle(self.x, self.y, RED_ALERT, size=4, life=50))
-            floating_texts.append(FloatingText(self.x, self.y - 12, "-100 HP", RED_ALERT))
+            floating_texts.append(FloatingText(self.x, self.y - 12, f"-{dmg_dealt} HP", RED_ALERT))
             return False
 
 

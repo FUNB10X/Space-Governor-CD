@@ -914,6 +914,17 @@ def game(screen, clock, slot_id):
     unlocked_turrets = set(city_data.get('unlocked_turrets', ["normal_turret", "wall"]))
     unlocked_upgrades = set(city_data.get('unlocked_upgrades', []))
 
+    # Precompute upgrade multipliers so loaded assets benefit from existing upgrades
+    upgrade_cost_mult = 0.8 if "Military Subsidy" in unlocked_upgrades else 1.0
+    wall_hp_mult = 1.5 if "Carbon Steel Walls" in unlocked_upgrades else 1.0
+    normal_rate_mult = 0.7 if "Fast Recharger" in unlocked_upgrades else 1.0
+    heavy_dmg_mult = 1.25 if "Laser Overcharge" in unlocked_upgrades else 1.0
+    range_mult = 1.25 if "Advanced Optics" in unlocked_upgrades else 1.0
+    global_rate_mult = 0.8 if "Quick Hands" in unlocked_upgrades else 1.0
+    dome_dmg_mult = 0.75 if "Shield Generator" in unlocked_upgrades else 1.0
+    energy_cap_mult = 1.15 if "Energy Capacitor" in unlocked_upgrades else 1.0
+    demolish_refund_mult = 1.6 if "Recycling Plant" in unlocked_upgrades else 1.0
+
     dome = Dome()
     dome.hp = city_data['dome_hp']
     dome.max_hp = city_data.get('dome_max_hp', 1000)
@@ -924,10 +935,10 @@ def game(screen, clock, slot_id):
 
     turrets = []
     for t in city_data.get('turrets', []):
-        turrets.append(Turret(t['type'], t['x'], t['y']))
+        turrets.append(Turret(t['type'], t['x'], t['y'], upgrade_cost_mult, normal_rate_mult, heavy_dmg_mult, range_mult, global_rate_mult))
 
     for w in city_data.get('walls', []):
-        structures.append(Structure('wall', w['x'], w['y']))
+        structures.append(Structure('wall', w['x'], w['y'], wall_hp_mult))
 
     enemies = []
     projectiles = []
@@ -986,6 +997,10 @@ def game(screen, clock, slot_id):
         dt = min(dt, 0.05)
 
         tick += 1
+
+        if game_phase != "BUILD":
+            selected_building = None
+            selected_placed_entity = None
 
         if not pause_open:
             play_time += dt
@@ -1412,7 +1427,7 @@ def game(screen, clock, slot_id):
         for ft in floating_texts:
             ft.draw(screen, FONTS, cam_x, cam_y)
 
-        if selected_building and my > 65 and my < SH - bar_h:
+        if selected_building and game_phase == "BUILD" and my > 65 and my < SH - bar_h:
             world_x = cam_x + mx
             world_y = cam_y + my
             valid = get_placement_zone(selected_building, world_x, world_y, dome)
