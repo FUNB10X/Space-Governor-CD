@@ -122,8 +122,8 @@ TR = {
     "COAL": {"th": "ถ่านหิน"},
     "HAPPINESS": {"th": "ความสุข"},
     "POPULATION": {"th": "ประชากร"},
-    "WAVE": {"th": "คลื่น"},
-    "NEXT WAVE": {"th": "เริ่มป้องกันคลื่นถัดไป"},
+    "WAVE": {"th": "เวฟ"},
+    "NEXT WAVE": {"th": "เริ่มป้องกันเวฟถัดไป"},
     "BUILD PHASE": {"th": "ช่วงเวลาพัฒนาเมือง"},
     "COMBAT PHASE": {"th": "ศัตรูเข้าโจมตี!"},
     "AUTOSAVED": {"th": "บันทึกอัตโนมัติเรียบร้อย"},
@@ -262,6 +262,7 @@ def init_procedural_sounds():
         SOUNDS['cash'] = _mk(np.concatenate([_ws(880, 0.04, 'tri', 0.2), _ws(1320, 0.06, 'tri', 0.2)]))
         SOUNDS['win_collection'] = _mk(np.concatenate([_ws(523, 0.08, 'sq', 0.25), _ws(659, 0.08, 'sq', 0.25), _ws(784, 0.16, 'sq', 0.3)]))
         SOUNDS['gameover'] = _mk(np.concatenate([_ws(220, 0.2, 'sq', 0.35), _ws(165, 0.25, 'sq', 0.3), _ws(110, 0.4, 'sq', 0.25)]))
+        SOUNDS['wave_start'] = _mk(np.concatenate([_ws(440, 0.1, 'sq', 0.2), _ws(660, 0.1, 'sq', 0.2), _ws(880, 0.2, 'sq', 0.3)]))
     except Exception as e:
         print("Sound creation error:", e)
 
@@ -446,6 +447,31 @@ def delete_city(slot_id):
             os.remove(path)
         except Exception as e:
             print(f"Error deleting city slot {slot_id}:", e)
+
+def create_new_city_data(city_name):
+    """Create a new city data dictionary with default starting values."""
+    return {
+        "city_name": city_name,
+        "exists": True,
+        "current_wave": 1,
+        "money": 500,
+        "iron": 100,
+        "coal": 50,
+        "dome_hp": 1000,
+        "dome_max_hp": 1000,
+        "structures": [
+            {"type": "iron_mine", "x": 820.0, "y": 200.0},
+            {"type": "coal_mine", "x": 820.0, "y": 360.0},
+            {"type": "house", "x": 820.0, "y": 520.0}
+        ],
+        "turrets": [],
+        "walls": [],
+        "play_time": 0.0,
+        "unlocked_structures": ["house", "iron_mine", "coal_mine"],
+        "unlocked_turrets": ["normal_turret", "wall"],
+        "happiness": 50,
+        "happiness_bonus": 0.0
+    }
 
 def reset_all_data():
     """Delete all city slots and profile file to reset system."""

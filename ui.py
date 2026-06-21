@@ -374,6 +374,7 @@ def draw_popup_cards(surf, title, subtitle, cards_list, mx, my, tick=0):
     """Draw a list of card overlays (Upgrade Selector / Enemy Selector).
     Returns hovered card index.
     """
+    print(f"DEBUG draw_popup_cards: cards_list length = {len(cards_list)}")
     dim = pygame.Surface((SW, SH), pygame.SRCALPHA)
     dim.fill((0, 0, 0, 140))
     surf.blit(dim, (0, 0))

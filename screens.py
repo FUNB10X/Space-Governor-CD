@@ -446,28 +446,7 @@ def hub(screen, clock):
                 elif ev.key == pygame.K_RETURN:
                     cleaned = dialog_text.strip()
                     if cleaned:
-                        new_city_data = {
-                            "city_name": cleaned,
-                            "exists": True,
-                            "current_wave": 1,
-                            "money": 500,
-                            "iron": 100,
-                            "coal": 50,
-                            "dome_hp": 1000,
-                            "dome_max_hp": 1000,
-                            "structures": [
-                                {"type": "iron_mine", "x": 820.0, "y": 200.0},
-                                {"type": "coal_mine", "x": 820.0, "y": 360.0},
-                                {"type": "house", "x": 820.0, "y": 520.0}
-                            ],
-                            "turrets": [],
-                            "walls": [],
-                            "play_time": 0.0,
-                            "unlocked_structures": ["house", "iron_mine", "coal_mine"],
-                            "unlocked_turrets": ["normal_turret", "wall"],
-                            "happiness": 50,
-                            "happiness_bonus": 0.0
-                        }
+                        new_city_data = create_new_city_data(cleaned)
                         save_city(dialog_slot, new_city_data)
                         prof_data = load_profile() or {}
                         save_profile({'cities_created': prof_data.get('cities_created', 0) + 1})
@@ -503,28 +482,7 @@ def hub(screen, clock):
                     play_sfx('click')
                     cleaned = dialog_text.strip()
                     if cleaned:
-                        new_city_data = {
-                            "city_name": cleaned,
-                            "exists": True,
-                            "current_wave": 1,
-                            "money": 500,
-                            "iron": 100,
-                            "coal": 50,
-                            "dome_hp": 1000,
-                            "dome_max_hp": 1000,
-                            "structures": [
-                                {"type": "iron_mine", "x": 820.0, "y": 200.0},
-                                {"type": "coal_mine", "x": 820.0, "y": 360.0},
-                                {"type": "house", "x": 820.0, "y": 520.0}
-                            ],
-                            "turrets": [],
-                            "walls": [],
-                            "play_time": 0.0,
-                            "unlocked_structures": ["house", "iron_mine", "coal_mine"],
-                            "unlocked_turrets": ["normal_turret", "wall"],
-                            "happiness": 50,
-                            "happiness_bonus": 0.0
-                        }
+                        new_city_data = create_new_city_data(cleaned)
                         save_city(dialog_slot, new_city_data)
                         prof_data = load_profile() or {}
                         save_profile({'cities_created': prof_data.get('cities_created', 0) + 1})
@@ -847,6 +805,8 @@ UPGRADE_POOL = [
 ]
 
 def generate_enemy_options(wave):
+    """Generate enemy options with different wave counts."""
+    print(f"DEBUG: generate_enemy_options called with wave={wave}")
     base_count = 6 + wave
 
     comp_low = ['A'] * base_count
@@ -863,7 +823,7 @@ def generate_enemy_options(wave):
         {
             "name": f"{tr('Enemy Group')} Alpha",
             "risk": "Low",
-            "waves_count": 1,
+            "waves_count": 3,
             "reward_money": 80 + wave * 20,
             "reward_iron": 15 + wave * 5,
             "reward_coal": 5 + wave * 2,
@@ -872,7 +832,7 @@ def generate_enemy_options(wave):
         {
             "name": f"{tr('Enemy Group')} Beta",
             "risk": "Medium",
-            "waves_count": 1,
+            "waves_count": 5,
             "reward_money": 150 + wave * 35,
             "reward_iron": 30 + wave * 8,
             "reward_coal": 15 + wave * 4,
@@ -881,7 +841,7 @@ def generate_enemy_options(wave):
         {
             "name": f"{tr('Enemy Group')} Gamma",
             "risk": "High",
-            "waves_count": 1,
+            "waves_count": 7,
             "reward_money": 250 + wave * 55,
             "reward_iron": 55 + wave * 12,
             "reward_coal": 30 + wave * 6,
@@ -953,17 +913,26 @@ def game(screen, clock, slot_id):
     selected_building = None
     selected_placed_entity = None
 
-    game_phase = "BUILD"
+    game_phase = "SELECTOR"  # Start with enemy selection
     bar_h = 90
     build_bar_category = "Defense"
 
-    enemy_options = []
+    enemy_options = generate_enemy_options(wave)  # Pre-generate enemy options for first selection
+    print(f"DEBUG: Initial enemy_options count: {len(enemy_options)}, wave: {wave}")
     upgrade_options = []
     combat_spawn_queue = []
     combat_spawn_timer = 0.0
     combat_break_timer = 0.0
     collection_rewards = None
     wave_cleared_anim = 0.0
+    total_waves = 0           # Total waves in current set (from chosen option)
+    current_wave_in_set = 0   # Current wave number (1, 2, 3...)
+    prep_timer = 0.0          # 60s prep before first wave
+    rest_timer = 0.0          # 10s rest between waves
+    current_wave_composition = []  # Enemies for current wave
+    enemies_spawned_this_wave = 0
+    total_enemies_this_wave = 0
+    current_enemy_set = None  # Store the chosen enemy set for subsequent waves
 
     last_frame_time = time.time()
     autosave_alert_timer = 0.0
@@ -998,7 +967,8 @@ def game(screen, clock, slot_id):
 
         tick += 1
 
-        if game_phase != "BUILD":
+        # Allow building during COMBAT and rest (but clear selection in SELECTOR/UPGRADE)
+        if game_phase in ("SELECTOR", "UPGRADE"):
             selected_building = None
             selected_placed_entity = None
 
@@ -1071,9 +1041,6 @@ def game(screen, clock, slot_id):
         if pause_submenu == 'settings':
             _update_slider_drag(mx, music_track='game')
 
-        next_wave_btn_rect = pygame.Rect(SW - 180, SH - bar_h - 55, 160, 40)
-        next_wave_btn_hov = next_wave_btn_rect.collidepoint(mx, my)
-
         if click and game_phase not in ("SELECTOR", "UPGRADE"):
             if pause_btn_rect.collidepoint(mx, my):
                 play_sfx('click')
@@ -1111,7 +1078,8 @@ def game(screen, clock, slot_id):
             cam_y = 0.0
             last_drag_pos = (mx, my)
 
-        if not overlay_active and game_phase == "BUILD":
+        # Always show build bar and allow building (except during SELECTOR/UPGRADE)
+        if not overlay_active and game_phase not in ("SELECTOR", "UPGRADE"):
             build_bar_rects, tab_rects = draw_build_bar(screen, selected_building, money, iron, coal, unlocked_structures, unlocked_turrets, mx, my, build_bar_category)
 
             if click:
@@ -1149,14 +1117,7 @@ def game(screen, clock, slot_id):
                             break
 
                 if not tab_clicked and not bar_clicked:
-                    if next_wave_btn_hov:
-                        play_sfx('click')
-                        enemy_options = generate_enemy_options(wave)
-                        game_phase = "SELECTOR"
-                        selected_building = None
-                        selected_placed_entity = None
-                        click = False
-                    elif my > 65 and my < SH - bar_h:
+                    if my > 65 and my < SH - bar_h:
                         world_x = cam_x + mx
                         world_y = cam_y + my
                         if selected_building:
@@ -1220,22 +1181,30 @@ def game(screen, clock, slot_id):
                             selected_placed_entity = clicked_ent
 
         elif not overlay_active and game_phase == "SELECTOR":
+            print(f"DEBUG SELECTOR: enemy_options count = {len(enemy_options)}")
             hovered_card = draw_popup_cards(screen, tr("SELECT NEXT ENEMY GROUP"), tr("Choose your threat and reward"), enemy_options, mx, my, tick)
             if click and hovered_card != -1:
                 play_sfx('click')
                 play_sfx('wave_start')
                 chosen = enemy_options[hovered_card]
+                current_enemy_set = chosen  # Store for subsequent waves
                 collection_rewards = {
                     'money': chosen['reward_money'],
                     'iron': chosen['reward_iron'],
                     'coal': chosen['reward_coal']
                 }
 
-                raw_list = list(chosen['composition'])
-                random.shuffle(raw_list)
-                combat_spawn_queue = raw_list
+                # Setup new wave system
+                total_waves = chosen['waves_count']
+                current_wave_in_set = 0
+                current_wave_composition = list(chosen['composition'])
+                random.shuffle(current_wave_composition)
+                enemies_spawned_this_wave = 0
+                total_enemies_this_wave = len(current_wave_composition)
+                combat_spawn_queue = []
                 combat_spawn_timer = 1.5
-                combat_break_timer = 0.0
+                rest_timer = 0.0
+                prep_timer = 60.0  # 60 seconds prep time before first wave
                 game_phase = "COMBAT"
 
         elif not overlay_active and game_phase == "UPGRADE":
@@ -1266,21 +1235,35 @@ def game(screen, clock, slot_id):
                 autosave_alert_timer = 2.5
 
         if not overlay_active and game_phase == "COMBAT":
-            if combat_break_timer > 0:
-                combat_break_timer -= dt
+            # Handle prep timer before first wave
+            if prep_timer > 0:
+                prep_timer -= dt
+                if click:
+                    prep_timer = 0.0
+            # Handle rest timer between waves
+            elif rest_timer > 0:
+                rest_timer -= dt
+                if click:
+                    rest_timer = 0.0
+            # Handle spawn timer
             elif combat_spawn_timer > 0:
                 combat_spawn_timer -= dt
-            elif len(combat_spawn_queue) > 0:
-                etype = combat_spawn_queue.pop(0)
+            # Spawn next enemy from current wave
+            elif enemies_spawned_this_wave < total_enemies_this_wave and current_wave_composition:
+                etype = current_wave_composition.pop(0)
                 enemies.append(Enemy(etype, wave))
+                enemies_spawned_this_wave += 1
                 if etype == 'A':
                     combat_spawn_timer = 0.9
                 elif etype == 'B':
                     combat_spawn_timer = 1.6
                 else:
                     combat_spawn_timer = 2.2
-            else:
-                if len(enemies) == 0:
+            # Current wave done, check if all enemies dead
+            elif len(enemies) == 0 and enemies_spawned_this_wave >= total_enemies_this_wave:
+                current_wave_in_set += 1
+                if current_wave_in_set >= total_waves:
+                    # All waves complete! Give rewards and upgrade
                     money += collection_rewards['money']
                     iron += collection_rewards['iron']
                     coal += collection_rewards['coal']
@@ -1327,6 +1310,14 @@ def game(screen, clock, slot_id):
                     if len(avail_pool) < 3:
                         avail_pool = list(UPGRADE_POOL)
                     upgrade_options = random.sample(avail_pool, 3)
+                else:
+                    # Start rest timer for next wave
+                    rest_timer = 10.0
+                    current_wave_composition = list(current_enemy_set['composition'])
+                    random.shuffle(current_wave_composition)
+                    enemies_spawned_this_wave = 0
+                    total_enemies_this_wave = len(current_wave_composition)
+                    combat_spawn_timer = 1.5
 
         if dome.hp <= 0:
             play_sfx('gameover')
@@ -1427,7 +1418,7 @@ def game(screen, clock, slot_id):
         for ft in floating_texts:
             ft.draw(screen, FONTS, cam_x, cam_y)
 
-        if selected_building and game_phase == "BUILD" and my > 65 and my < SH - bar_h:
+        if selected_building and game_phase not in ("SELECTOR", "UPGRADE") and my > 65 and my < SH - bar_h:
             world_x = cam_x + mx
             world_y = cam_y + my
             valid = get_placement_zone(selected_building, world_x, world_y, dome)
@@ -1450,6 +1441,14 @@ def game(screen, clock, slot_id):
             pygame.draw.rect(mark_surf, color, marker_rect, 2, border_radius=4)
             screen.blit(mark_surf, (mx - marker_size // 2, my - marker_size // 2))
 
+        # Calculate total enemies left across all sub-waves
+        total_enemies_left = len(enemies)
+        for sw in combat_spawn_queue:
+            if isinstance(sw, list):
+                total_enemies_left += len(sw)
+            else:
+                total_enemies_left += 1
+        
         state_label = "BUILD PHASE" if game_phase == "BUILD" else "COMBAT PHASE" if game_phase == "COMBAT" else "COMBAT PHASE"
         resources = {
             'money': money,
@@ -1460,29 +1459,21 @@ def game(screen, clock, slot_id):
         }
         hud_wave = wave
         combat_active = (game_phase == "COMBAT")
-        combat_enemies_left = len(enemies) + len(combat_spawn_queue)
         draw_hud(screen, dome.hp, dome.max_hp, resources, hud_wave, 0, state_label,
-                 combat_active=combat_active, combat_enemies_left=combat_enemies_left)
+                 combat_active=combat_active, combat_enemies_left=total_enemies_left)
 
-        if game_phase == "BUILD":
+        # Draw prep/rest timer during COMBAT
+        if game_phase == "COMBAT":
+            if prep_timer > 0 or rest_timer > 0:
+                timer_val = int(prep_timer if prep_timer > 0 else rest_timer) + 1
+                timer_text = f"Prepare: {timer_val}s" if prep_timer > 0 else f"Rest: {timer_val}s"
+                dtxt(screen, timer_text, 'l', HOLO_ORANGE, SW // 2, 90, 'center')
+                dtxt(screen, tr("Click to skip"), 'xs', (180, 185, 200), SW // 2, 120, 'center')
+
+        if game_phase in ("BUILD", "COMBAT"):
             draw_build_bar(screen, selected_building, money, iron, coal, unlocked_structures, unlocked_turrets, mx, my, build_bar_category)
 
-            n_pulse = 0.5 + 0.5 * math.sin(tick * 0.08)
-            nw_bg = (15, 25, 45)
-            nw_border = HOLO_BLUE if next_wave_btn_hov else (40, 60, 100)
-            if next_wave_btn_hov:
-                glow = pygame.Surface((next_wave_btn_rect.w + 16, next_wave_btn_rect.h + 16), pygame.SRCALPHA)
-                pygame.draw.rect(glow, (0, 140, 255, int(30 + 30 * n_pulse)), glow.get_rect(), border_radius=10)
-                screen.blit(glow, (next_wave_btn_rect.x - 8, next_wave_btn_rect.y - 8))
-            pygame.draw.rect(screen, nw_bg, next_wave_btn_rect, border_radius=6)
-            pygame.draw.rect(screen, nw_border, next_wave_btn_rect, 1 if not next_wave_btn_hov else 2, border_radius=6)
-            dtxt(screen, tr("NEXT WAVE"), 'xs', WHITE if next_wave_btn_hov else HOLO_BLUE, next_wave_btn_rect.centerx, next_wave_btn_rect.centery)
-            arrow_x = next_wave_btn_rect.x - 18
-            arrow_y = next_wave_btn_rect.centery
-            pygame.draw.polygon(screen, HOLO_ORANGE if next_wave_btn_hov else HOLO_BLUE,
-                                [(arrow_x - 8, arrow_y - 5), (arrow_x + 2, arrow_y), (arrow_x - 8, arrow_y + 5)])
-
-        if selected_placed_entity and game_phase == "BUILD":
+        if selected_placed_entity and game_phase not in ("SELECTOR", "UPGRADE"):
             ent_sx = int(selected_placed_entity.x - cam_x)
             ent_sy = int(selected_placed_entity.y - cam_y)
 

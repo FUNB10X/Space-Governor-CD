@@ -376,6 +376,15 @@ class Enemy:
             self.rew_money = 35
             self.rew_iron = 10
             self.rew_coal = 6
+        elif etype == 'C':
+            self.name = "Siege Titan"
+            self.max_hp = int(200 * hp_scalar)
+            self.hp = self.max_hp
+            self.spd = 35.0
+            self.dmg = 50
+            self.rew_money = 80
+            self.rew_iron = 25
+            self.rew_coal = 15
 
     def update(self, dt, dome, structures, turrets, particles, floating_texts, dome_dmg_mult=1.0):
         if self.hp <= 0:
@@ -486,3 +495,25 @@ class Enemy:
             # Shield visor
             pygame.draw.rect(surf, (20, 20, 20), (screen_x - 8, screen_y - 8, 16, 4))
             pygame.draw.rect(surf, GOLD, (screen_x - 4, screen_y - 8, 8, 2))
+            
+        elif self.etype == 'C':
+            # Siege Titan - massive walking fortress
+            # Heavy footsteps shake
+            step_offset = int(abs(math.sin(tick * 0.08)) * 3)
+            # Legs
+            pygame.draw.line(surf, (60, 60, 70), (screen_x - 14, screen_y + 8), (screen_x - 20, screen_y + 18 + step_offset), 5)
+            pygame.draw.line(surf, (60, 60, 70), (screen_x + 14, screen_y + 8), (screen_x + 20, screen_y + 18 + step_offset), 5)
+            # Main body - massive armor
+            pygame.draw.circle(surf, (40, 42, 50), (screen_x, screen_y), 22)
+            pygame.draw.circle(surf, (70, 75, 85), (screen_x, screen_y), 18)
+            pygame.draw.circle(surf, (100, 105, 115), (screen_x, screen_y), 14)
+            # Core reactor glow
+            pulse = 0.5 + 0.5 * math.sin(tick * 0.12)
+            reactor_col = (int(200 * pulse), int(50 * pulse), 0)
+            pygame.draw.circle(surf, reactor_col, (screen_x, screen_y), 6)
+            pygame.draw.circle(surf, GOLD, (screen_x, screen_y), 3)
+            # Shoulder cannons
+            pygame.draw.circle(surf, (50, 52, 60), (screen_x - 18, screen_y - 6), 6)
+            pygame.draw.circle(surf, (50, 52, 60), (screen_x + 18, screen_y - 6), 6)
+            pygame.draw.circle(surf, RED_ALERT, (screen_x - 18, screen_y - 6), 3)
+            pygame.draw.circle(surf, RED_ALERT, (screen_x + 18, screen_y - 6), 3)
