@@ -174,7 +174,7 @@ TR = {
     "Carbon Steel Walls": {"th": "กำแพงโครงสร้างคาร์บอน"},
     "Defense Upgrade: Wall HP +50%": {"th": "ต้านทาน: เพิ่มพลังป้องกันกำแพง +50%"},
     "Military Subsidy": {"th": "ทุนสนับสนุนการทหาร"},
-    "Turrets purchase cost -20%": {"th": "การทหาร: ลดราคาการสร้างป้อมปืนลง -20%"},
+    "Defense purchase cost -20%": {"th": "การทหาร: ลดราคาการสร้างป้องกันลง -20%"},
     "Fast Recharger": {"th": "วงจรระบายพลังงานเร็ว"},
     "Normal Turret attack rate +30%": {"th": "ป้อมกลเบา: ยิงเร็วขึ้น +30%"},
     "Laser Overcharge": {"th": "เลเซอร์โอเวอร์ชาร์จ"},

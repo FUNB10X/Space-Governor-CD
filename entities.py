@@ -354,6 +354,7 @@ class Enemy:
         self.size = 20
         self.wall_attack_timer = 0.0
         self.dome_attack_timer = 0.0
+        self.reached_dome = False
         
         # Wave health scaling (+10% health per wave)
         hp_scalar = 1.0 + (wave_num - 1) * 0.1
@@ -406,19 +407,27 @@ class Enemy:
         dy = target_y - self.y
         dist_to_target = math.hypot(dx, dy)
 
-        # Check if reached the rectangular Dome area.
+        # Check if reached the city/dome danger zone.
         inside_dome_rect = (
             CITY_ZONE_X <= self.x <= MW
-            and 0 <= self.y <= MH
+            and abs(self.y - DOME_Y) <= DOME_RADIUS
         )
         if inside_dome_rect:
             self.reached_dome = True
-            dmg_dealt = int(100 * dome_dmg_mult)
-            dome.hp = max(0, dome.hp - dmg_dealt)
-            play_sfx('dome_hit')
-            for _ in range(8):
-                particles.append(Particle(self.x, self.y, RED_ALERT, size=4, life=50))
-            floating_texts.append(FloatingText(self.x, self.y - 12, f"-{dmg_dealt} HP", RED_ALERT))
+            self.dome_attack_timer += dt
+
+            if self.dome_attack_timer >= 1.0:
+                ticks = int(self.dome_attack_timer)
+                self.dome_attack_timer -= ticks
+
+                dmg_per_tick = int(100 * dome_dmg_mult)
+                dmg_dealt = dmg_per_tick * ticks
+                dome.hp = max(0, dome.hp - dmg_dealt)
+                play_sfx('dome_hit')
+                for _ in range(8):
+                    particles.append(Particle(self.x, self.y, RED_ALERT, size=4, life=50))
+                floating_texts.append(FloatingText(self.x, self.y - 12, f"-{dmg_dealt} HP", RED_ALERT))
+
             return False
 
 

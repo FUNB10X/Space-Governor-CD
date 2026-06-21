@@ -9,6 +9,7 @@ from ui import *
 
 # Slider drag tracking (module-level so it persists across helper calls)
 _slider_dragging = [None]  # None | 'mus' | 'sfx'
+AUTOSAVE_INTERVAL = 20.0
 
 # ==========================================
 # SHARED SETTINGS / PAUSE OVERLAY HELPERS
@@ -365,7 +366,7 @@ def profile(screen, clock):
         screen.fill(MARS_BG)
         for gx in range(0, SW, 40):
             pygame.draw.line(screen, (30, 20, 15), (gx, 0), (gx, SH))
-        for gy in range(0, SW, 40):
+        for gy in range(0, SH, 40):
             pygame.draw.line(screen, (30, 20, 15), (0, gy), (SW, gy))
 
         box_w, box_h = 460, 260
@@ -782,7 +783,7 @@ def get_placement_zone(selected_building, world_x, world_y, dome):
             CITY_ZONE_X - 10 <= world_x <= MW + 10
             and -10 <= world_y <= MH + 10
         )
-        return (not on_lane) and not in_outer_dome_rect
+        return (not on_lane) and in_outer_dome_rect
     return in_city_dome
 
 UPGRADE_POOL = [
@@ -791,7 +792,7 @@ UPGRADE_POOL = [
     {"name": "Citizen Motivation", "category": "Policy", "desc": "Policy: Global happiness +20"},
     {"name": "Deep Core Drill", "category": "Policy", "desc": "Policy: Mine production +30%"},
     {"name": "Carbon Steel Walls", "category": "Defense", "desc": "Defense Upgrade: Wall HP +50%"},
-    {"name": "Military Subsidy", "category": "Defense", "desc": "Turrets purchase cost -20%"},
+    {"name": "Military Subsidy", "category": "Defense", "desc": "Defense purchase cost -20%"},
     {"name": "Fast Recharger", "category": "Defense", "desc": "Normal Turret attack rate +30%"},
     {"name": "Laser Overcharge", "category": "Defense", "desc": "High Damage Turret damage +25%"},
     {"name": "Unlock Park", "category": "Unlock", "desc": "Structure Unlock: Build Parks"},
@@ -806,7 +807,6 @@ UPGRADE_POOL = [
 
 def generate_enemy_options(wave):
     """Generate enemy options with different wave counts."""
-    print(f"DEBUG: generate_enemy_options called with wave={wave}")
     base_count = 6 + wave
 
     comp_low = ['A'] * base_count
@@ -885,6 +885,39 @@ def game(screen, clock, slot_id):
     energy_cap_mult = 1.15 if "Energy Capacitor" in unlocked_upgrades else 1.0
     demolish_refund_mult = 1.6 if "Recycling Plant" in unlocked_upgrades else 1.0
 
+    def refresh_upgrade_multipliers():
+        nonlocal upgrade_cost_mult, wall_hp_mult, normal_rate_mult, heavy_dmg_mult
+        nonlocal range_mult, global_rate_mult, dome_dmg_mult, energy_cap_mult, demolish_refund_mult
+        upgrade_cost_mult = 0.8 if "Military Subsidy" in unlocked_upgrades else 1.0
+        wall_hp_mult = 1.5 if "Carbon Steel Walls" in unlocked_upgrades else 1.0
+        normal_rate_mult = 0.7 if "Fast Recharger" in unlocked_upgrades else 1.0
+        heavy_dmg_mult = 1.25 if "Laser Overcharge" in unlocked_upgrades else 1.0
+        range_mult = 1.25 if "Advanced Optics" in unlocked_upgrades else 1.0
+        global_rate_mult = 0.8 if "Quick Hands" in unlocked_upgrades else 1.0
+        dome_dmg_mult = 0.75 if "Shield Generator" in unlocked_upgrades else 1.0
+        energy_cap_mult = 1.15 if "Energy Capacitor" in unlocked_upgrades else 1.0
+        demolish_refund_mult = 1.6 if "Recycling Plant" in unlocked_upgrades else 1.0
+
+    def apply_upgrade_to_existing_entities(upgrade_name):
+        if upgrade_name in ("Fast Recharger", "Quick Hands"):
+            for t in turrets:
+                if t.ttype == 'normal':
+                    t.fire_rate = 0.8 * normal_rate_mult * global_rate_mult
+        if upgrade_name in ("Laser Overcharge", "Quick Hands"):
+            for t in turrets:
+                if t.ttype == 'heavy':
+                    t.dmg = int(40 * heavy_dmg_mult)
+                    t.fire_rate = 2.2 * global_rate_mult
+        if upgrade_name == "Advanced Optics":
+            for t in turrets:
+                base_range = 320 if t.ttype == 'heavy' else 220
+                t.rng = int(base_range * range_mult)
+        if upgrade_name == "Carbon Steel Walls":
+            for s in structures:
+                if s.stype == 'wall':
+                    s.max_hp = int(250 * wall_hp_mult)
+                    s.hp = s.max_hp
+
     dome = Dome()
     dome.hp = city_data['dome_hp']
     dome.max_hp = city_data.get('dome_max_hp', 1000)
@@ -898,7 +931,11 @@ def game(screen, clock, slot_id):
         turrets.append(Turret(t['type'], t['x'], t['y'], upgrade_cost_mult, normal_rate_mult, heavy_dmg_mult, range_mult, global_rate_mult))
 
     for w in city_data.get('walls', []):
-        structures.append(Structure('wall', w['x'], w['y'], wall_hp_mult))
+        wall = Structure('wall', w['x'], w['y'], wall_hp_mult)
+        if 'hp' in w:
+            wall.max_hp = int(w.get('max_hp', wall.max_hp))
+            wall.hp = max(0, min(int(w.get('hp', wall.max_hp)), wall.max_hp))
+        structures.append(wall)
 
     enemies = []
     projectiles = []
@@ -913,33 +950,32 @@ def game(screen, clock, slot_id):
     selected_building = None
     selected_placed_entity = None
 
-    game_phase = "SELECTOR"  # Start with enemy selection
+    game_phase = "BUILD"
     bar_h = 90
     build_bar_category = "Defense"
 
-    enemy_options = generate_enemy_options(wave)  # Pre-generate enemy options for first selection
-    print(f"DEBUG: Initial enemy_options count: {len(enemy_options)}, wave: {wave}")
+    enemy_options = []
     upgrade_options = []
     combat_spawn_queue = []
     combat_spawn_timer = 0.0
-    combat_break_timer = 0.0
     collection_rewards = None
     wave_cleared_anim = 0.0
     total_waves = 0           # Total waves in current set (from chosen option)
     current_wave_in_set = 0   # Current wave number (1, 2, 3...)
-    prep_timer = 0.0          # 60s prep before first wave
+    prep_timer = 0.0
     rest_timer = 0.0          # 10s rest between waves
     current_wave_composition = []  # Enemies for current wave
     enemies_spawned_this_wave = 0
     total_enemies_this_wave = 0
     current_enemy_set = None  # Store the chosen enemy set for subsequent waves
 
-    last_frame_time = time.time()
     autosave_alert_timer = 0.0
+    autosave_timer = 0.0
 
     pause_open = False
     pause_submenu = None
     pause_btn_rect = pygame.Rect(SW - 125, 12, 50, 42)
+    next_wave_btn_rect = pygame.Rect(SW - 285, 12, 145, 42)
 
     def persist_city():
         city_data['money'] = money
@@ -952,7 +988,7 @@ def game(screen, clock, slot_id):
         city_data['dome_max_hp'] = dome.max_hp
         city_data['play_time'] = play_time
         city_data['structures'] = [{'type': s.stype, 'x': s.x, 'y': s.y} for s in structures if s.stype != 'wall']
-        city_data['walls'] = [{'x': s.x, 'y': s.y} for s in structures if s.stype == 'wall']
+        city_data['walls'] = [{'x': s.x, 'y': s.y, 'hp': s.hp, 'max_hp': s.max_hp} for s in structures if s.stype == 'wall']
         city_data['turrets'] = [{'type': t.ttype, 'x': t.x, 'y': t.y} for t in turrets]
         city_data['unlocked_structures'] = list(unlocked_structures)
         city_data['unlocked_turrets'] = list(unlocked_turrets)
@@ -974,6 +1010,11 @@ def game(screen, clock, slot_id):
 
         if not pause_open:
             play_time += dt
+            autosave_timer += dt
+            if autosave_timer >= AUTOSAVE_INTERVAL:
+                autosave_timer = 0.0
+                persist_city()
+                autosave_alert_timer = 2.5
 
         if autosave_alert_timer > 0:
             autosave_alert_timer -= dt
@@ -1029,7 +1070,7 @@ def game(screen, clock, slot_id):
                         pause_submenu = None
                     elif pause_open:
                         pause_open = False
-                    elif game_phase not in ("SELECTOR", "UPGRADE"):
+                    else:
                         pause_open = True
                         selected_building = None
                         selected_placed_entity = None
@@ -1041,13 +1082,20 @@ def game(screen, clock, slot_id):
         if pause_submenu == 'settings':
             _update_slider_drag(mx, music_track='game')
 
-        if click and game_phase not in ("SELECTOR", "UPGRADE"):
+        if click:
             if pause_btn_rect.collidepoint(mx, my):
                 play_sfx('click')
                 if pause_submenu == 'settings':
                     pause_submenu = None
                 else:
                     pause_open = not pause_open
+                selected_building = None
+                selected_placed_entity = None
+                click = False
+            elif game_phase == "BUILD" and not overlay_active and next_wave_btn_rect.collidepoint(mx, my):
+                play_sfx('click')
+                enemy_options = generate_enemy_options(wave)
+                game_phase = "SELECTOR"
                 selected_building = None
                 selected_placed_entity = None
                 click = False
@@ -1080,7 +1128,7 @@ def game(screen, clock, slot_id):
 
         # Always show build bar and allow building (except during SELECTOR/UPGRADE)
         if not overlay_active and game_phase not in ("SELECTOR", "UPGRADE"):
-            build_bar_rects, tab_rects = draw_build_bar(screen, selected_building, money, iron, coal, unlocked_structures, unlocked_turrets, mx, my, build_bar_category)
+            build_bar_rects, tab_rects = draw_build_bar(screen, selected_building, money, iron, coal, unlocked_structures, unlocked_turrets, mx, my, build_bar_category, upgrade_cost_mult)
 
             if click:
                 tab_clicked = False
@@ -1165,6 +1213,8 @@ def game(screen, clock, slot_id):
                                     particles.append(Particle(world_x, world_y, MARS_RUST))
 
                                 selected_building = None
+                                persist_city()
+                                autosave_alert_timer = 2.5
                             else:
                                 play_sfx('dome_hit')
                         else:
@@ -1181,7 +1231,6 @@ def game(screen, clock, slot_id):
                             selected_placed_entity = clicked_ent
 
         elif not overlay_active and game_phase == "SELECTOR":
-            print(f"DEBUG SELECTOR: enemy_options count = {len(enemy_options)}")
             hovered_card = draw_popup_cards(screen, tr("SELECT NEXT ENEMY GROUP"), tr("Choose your threat and reward"), enemy_options, mx, my, tick)
             if click and hovered_card != -1:
                 play_sfx('click')
@@ -1213,6 +1262,8 @@ def game(screen, clock, slot_id):
                 play_sfx('click')
                 chosen = upgrade_options[hovered_card]
                 unlocked_upgrades.add(chosen['name'])
+                refresh_upgrade_multipliers()
+                apply_upgrade_to_existing_entities(chosen['name'])
 
                 if chosen['name'] == 'Unlock Park':
                     unlocked_structures.add('park')
@@ -1297,6 +1348,9 @@ def game(screen, clock, slot_id):
                     if wave > prof.get('highest_wave', 0):
                         save_profile({'highest_wave': wave})
 
+                    persist_city()
+                    autosave_alert_timer = 2.5
+
                     game_phase = "UPGRADE"
 
                     avail_pool = []
@@ -1359,6 +1413,7 @@ def game(screen, clock, slot_id):
                         iron += e.rew_iron
                         coal += e.rew_coal
                     enemies.remove(e)
+                    persist_city()
 
             for s in structures[:]:
                 if s.hp <= 0:
@@ -1368,6 +1423,8 @@ def game(screen, clock, slot_id):
                     structures.remove(s)
                     if selected_placed_entity == s:
                         selected_placed_entity = None
+                    persist_city()
+                    autosave_alert_timer = 2.5
 
             for t in turrets[:]:
                 if t.hp <= 0:
@@ -1449,7 +1506,16 @@ def game(screen, clock, slot_id):
             else:
                 total_enemies_left += 1
         
-        state_label = "BUILD PHASE" if game_phase == "BUILD" else "COMBAT PHASE" if game_phase == "COMBAT" else "COMBAT PHASE"
+        if game_phase == "BUILD":
+            state_label = "BUILD PHASE"
+        elif game_phase == "COMBAT":
+            state_label = "COMBAT PHASE"
+        elif game_phase == "SELECTOR":
+            state_label = "SELECT ENEMY GROUP"
+        elif game_phase == "UPGRADE":
+            state_label = "SELECT UPGRADE"
+        else:
+            state_label = tr("Unknown Phase")
         resources = {
             'money': money,
             'iron': iron,
@@ -1471,7 +1537,7 @@ def game(screen, clock, slot_id):
                 dtxt(screen, tr("Click to skip"), 'xs', (180, 185, 200), SW // 2, 120, 'center')
 
         if game_phase in ("BUILD", "COMBAT"):
-            draw_build_bar(screen, selected_building, money, iron, coal, unlocked_structures, unlocked_turrets, mx, my, build_bar_category)
+            draw_build_bar(screen, selected_building, money, iron, coal, unlocked_structures, unlocked_turrets, mx, my, build_bar_category, upgrade_cost_mult)
 
         if selected_placed_entity and game_phase not in ("SELECTOR", "UPGRADE"):
             ent_sx = int(selected_placed_entity.x - cam_x)
@@ -1532,15 +1598,8 @@ def game(screen, clock, slot_id):
                     turrets.remove(selected_placed_entity)
 
                 selected_placed_entity = None
-
-        if game_phase == "COMBAT" and combat_break_timer > 0:
-            box_w, box_h = 320, 80
-            bx = SW // 2 - box_w // 2
-            by = 90
-            pygame.draw.rect(screen, DARK_GLASS, (bx, by, box_w, box_h), border_radius=8)
-            pygame.draw.rect(screen, HOLO_ORANGE, (bx, by, box_w, box_h), 1, border_radius=8)
-            dtxt(screen, f"{tr('COMBAT PHASE')} — {tr('WAVE')} {wave}", 's', WHITE, SW // 2, by + 22)
-            dtxt(screen, f"{tr('Next Wave in')} {int(combat_break_timer) + 1}s", 'xs', HOLO_ORANGE, SW // 2, by + 50)
+                persist_city()
+                autosave_alert_timer = 2.5
 
         if wave_cleared_anim > 0:
             anim_alpha = min(255, int(wave_cleared_anim * 200))
@@ -1560,12 +1619,17 @@ def game(screen, clock, slot_id):
         elif game_phase == "UPGRADE":
             draw_popup_cards(screen, tr("SELECT ONE UPGRADE CARD"), tr("Choose upgrades to defend colony"), upgrade_options, mx, my, tick)
 
-        if game_phase not in ("SELECTOR", "UPGRADE"):
-            pause_hov = pause_btn_rect.collidepoint(mx, my)
-            p_col = HOLO_BLUE if pause_hov or pause_open else (40, 60, 100)
-            pygame.draw.rect(screen, (15, 20, 38), pause_btn_rect, border_radius=6)
-            pygame.draw.rect(screen, p_col, pause_btn_rect, 1 if not pause_hov else 2, border_radius=6)
-            dtxt(screen, "II", 's', WHITE if pause_hov or pause_open else HOLO_BLUE, pause_btn_rect.centerx, pause_btn_rect.centery)
+        if game_phase == "BUILD" and not overlay_active:
+            nw_hov = next_wave_btn_rect.collidepoint(mx, my)
+            pygame.draw.rect(screen, (15, 20, 38), next_wave_btn_rect, border_radius=8)
+            pygame.draw.rect(screen, HOLO_GREEN if nw_hov else HOLO_BLUE, next_wave_btn_rect, 2 if nw_hov else 1, border_radius=8)
+            dtxt(screen, tr("Next Wave"), 'xs', WHITE if nw_hov else HOLO_GREEN, next_wave_btn_rect.centerx, next_wave_btn_rect.centery)
+
+        pause_hov = pause_btn_rect.collidepoint(mx, my)
+        p_col = HOLO_BLUE if pause_hov or pause_open else (40, 60, 100)
+        pygame.draw.rect(screen, (15, 20, 38), pause_btn_rect, border_radius=6)
+        pygame.draw.rect(screen, p_col, pause_btn_rect, 1 if not pause_hov else 2, border_radius=6)
+        dtxt(screen, "II", 's', WHITE if pause_hov or pause_open else HOLO_BLUE, pause_btn_rect.centerx, pause_btn_rect.centery)
 
         if overlay_active:
             _draw_dim_overlay(screen)

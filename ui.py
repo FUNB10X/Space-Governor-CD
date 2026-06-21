@@ -236,7 +236,7 @@ def _tab_tr(name):
         return _TAB_LABELS.get(name, {}).get('th', name)
     return name
 
-def draw_build_bar(surf, selected_building, money, iron, coal, unlocked_structures, unlocked_turrets, mx, my, category="Defense"):
+def draw_build_bar(surf, selected_building, money, iron, coal, unlocked_structures, unlocked_turrets, mx, my, category="Defense", upgrade_cost_mult=1.0):
     """Draw bottom toolbar with category tabs. Returns (click_rects, tab_rects)."""
     bar_h = 90
     bar_y = SH - bar_h
@@ -284,9 +284,9 @@ def draw_build_bar(surf, selected_building, money, iron, coal, unlocked_structur
         dtxt(surf, _tab_tr(tname), 'xs', tab_text_col, tr_rect.centerx, tr_rect.centery)
 
     defense_defs = [
-        ('normal', tr("Normal Turret"), 120, 20, 0, 'normal_turret' in unlocked_turrets, "NormalTurretDesc"),
-        ('heavy', tr("High Damage Turret"), 250, 50, 0, 'heavy_turret' in unlocked_turrets, "HighDamageTurretDesc"),
-        ('wall', tr("Wall"), 30, 10, 0, 'wall' in unlocked_turrets, "WallDesc")
+        ('normal', tr("Normal Turret"), int(120 * upgrade_cost_mult), 20, 0, 'normal_turret' in unlocked_turrets, "NormalTurretDesc"),
+        ('heavy', tr("High Damage Turret"), int(250 * upgrade_cost_mult), 50, 0, 'heavy_turret' in unlocked_turrets, "HighDamageTurretDesc"),
+        ('wall', tr("Wall"), int(30 * upgrade_cost_mult), 10, 0, 'wall' in unlocked_turrets, "WallDesc")
     ]
     structure_defs = [
         ('house', tr("House"), 100, 0, 0, 'house' in unlocked_structures, "HouseDesc"),
@@ -374,7 +374,6 @@ def draw_popup_cards(surf, title, subtitle, cards_list, mx, my, tick=0):
     """Draw a list of card overlays (Upgrade Selector / Enemy Selector).
     Returns hovered card index.
     """
-    print(f"DEBUG draw_popup_cards: cards_list length = {len(cards_list)}")
     dim = pygame.Surface((SW, SH), pygame.SRCALPHA)
     dim.fill((0, 0, 0, 140))
     surf.blit(dim, (0, 0))
